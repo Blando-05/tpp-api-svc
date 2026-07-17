@@ -69,7 +69,7 @@ module.exports = {
         headers: request.headers,
         payload: request.payload
       }, EventSdk.AuditEventAction.start)
-      tppTransactionRequests.forwardTppTransactionRequestsError((<any> Enum.EndPoints.FspEndpointTemplates).TP_TRANSACTION_REQUEST_PUT_ERROR, request.headers, Enum.Http.RestMethods.PUT, request.params, request.payload, span).catch((err: Error) => {
+      tppTransactionRequests.forwardTppTransactionRequestsError(request.headers, request.headers[Enum.Http.Headers.FSPIOP.DESTINATION], (<any> Enum.EndPoints.FspEndpointTemplates).TP_TRANSACTION_REQUEST_PUT_ERROR, Enum.Http.RestMethods.PUT, request.params.ID, request.payload, span).catch((err: Error) => {
         // Do nothing with the error - forwardTppTransactionRequestsError takes care of async errors
         request.server.log(['error'], `ERROR - forwardTppTransactionRequests: ${LibUtil.getStackOrInspect(err)}`)
       })

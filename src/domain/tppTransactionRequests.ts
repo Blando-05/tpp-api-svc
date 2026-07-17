@@ -47,18 +47,39 @@ const { getStackOrInspect } = require('../lib/util.js')
 const hubNameRegex = HeaderValidation.getHubNameRegex(Config.HUB_NAME)
 const responseType = Enum.Http.ResponseTypes.JSON
 
+export type FspiopHeaders = Record<string, string>
+export type RestMethod = typeof Enum.Http.RestMethods[keyof typeof Enum.Http.RestMethods]
+
+export interface TransactionRequestParams {
+  ID: string
+}
+
+export interface TppTransactionRequestPayload {
+  transactionRequestId?: string
+  [key: string]: unknown
+}
+
+export interface ErrorInformationPayload {
+  errorInformation: {
+    errorCode: string
+    errorDescription: string
+    extensionList?: unknown
+  }
+}
+
 /**
  * Forwards tppTransactionRequests endpoint requests to destination FSP for processing
  *
  * @returns {boolean}
  */
-const forwardTppTransactionRequests = async (path: string, headers: any, method: string, params: any, payload: any, span: Span | null = null): Promise<boolean> => {
+const forwardTppTransactionRequests = async (path: string, headers: FspiopHeaders, method: RestMethod, params: TransactionRequestParams, payload: TppTransactionRequestPayload | undefined, span: Span | null = null): Promise<boolean> => {
   const childSpan = span ? span.getChild('forwardTppTransactionRequests') : undefined
   let endpoint: string | undefined
-  const source = headers[Enum.Http.Headers.FSPIOP.SOURCE]
+  // FSPIOP-Source is a required header (see openapi.yaml), guaranteed present by request validation
+  const source = headers[Enum.Http.Headers.FSPIOP.SOURCE] as string
   const destination = headers[Enum.Http.Headers.FSPIOP.DESTINATION]
   const payloadLocal = payload || { transactionRequestId: params.ID }
-  const transactionRequestId = (payload && payload.transactionRequestId) || params.ID
+  const transactionRequestId = payloadLocal.transactionRequestId || params.ID
   let fspiopError: any
 
   try {
@@ -68,7 +89,7 @@ const forwardTppTransactionRequests = async (path: string, headers: any, method:
     if (!endpoint) {
       // we didnt get an endpoint for the payee dfsp!
       // make an error callback to the initiator
-      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.DESTINATION_FSP_ERROR, `No ${Enum.EndPoints.FspEndpointTypes.FSPIOP_CALLBACK_URL_TPP_REQ_SERVICE} endpoint found for tppTransactionRequests ${transactionRequestId} for ${Enum.Http.Headers.FSPIOP.DESTINATION}`, method.toUpperCase() !== Enum.Http.RestMethods.GET ? payload : undefined, source)
+      throw ErrorHandler.Factory.createFSPIOPError(ErrorHandler.Enums.FSPIOPErrorCodes.DESTINATION_FSP_ERROR, `No ${Enum.EndPoints.FspEndpointTypes.FSPIOP_CALLBACK_URL_TPP_REQ_SERVICE} endpoint found for tppTransactionRequests ${transactionRequestId} for ${Enum.Http.Headers.FSPIOP.DESTINATION}`, payloadLocal, source)
     }
     const url = Mustache.render(endpoint + path, {
       ID: transactionRequestId
@@ -76,7 +97,7 @@ const forwardTppTransactionRequests = async (path: string, headers: any, method:
 
     Logger.info(`Forwarding tpp transaction request to endpoint: ${url}`)
 
-    const response = await Request.sendRequest({ url, headers, source, destination, method, payload: method.toUpperCase() !== Enum.Http.RestMethods.GET ? payloadLocal : undefined, responseType, span: childSpan, hubNameRegex })
+    const response = await Request.sendRequest({ url, headers, source, destination, method, payload: payloadLocal, responseType, span: childSpan, hubNameRegex })
 
     Logger.info(`Forwarded tpp transaction request ${transactionRequestId} from ${source} to ${destination} got response ${response.status} ${response.statusText}`)
 
@@ -104,10 +125,11 @@ const forwardTppTransactionRequests = async (path: string, headers: any, method:
  *
  * @returns {boolean}
  */
-const forwardTppTransactionRequestsError = async (headers: any, to: string, path: string, method: string, transactionRequestId: string, payload: any, span: Span | null = null): Promise<boolean> => {
+const forwardTppTransactionRequestsError = async (headers: FspiopHeaders, to: string | undefined, path: string, method: RestMethod, transactionRequestId: string, payload: ErrorInformationPayload, span: Span | null = null): Promise<boolean> => {
   const childSpan = span ? span.getChild('forwardTppTransactionRequestsError') : undefined
   let endpoint: string | undefined
-  const source = headers[Enum.Http.Headers.FSPIOP.SOURCE]
+  // FSPIOP-Source is a required header (see openapi.yaml), guaranteed present by request validation
+  const source = headers[Enum.Http.Headers.FSPIOP.SOURCE] as string
   const destination = headers[Enum.Http.Headers.FSPIOP.DESTINATION]
   try {
     // endpoint = 'http://mojaloop-testing-toolkit:4040/tpp' // FOR TESTING PURPOSES WITH TTK
